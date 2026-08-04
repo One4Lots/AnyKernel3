@@ -300,14 +300,14 @@ do_devicecheck() {
   for testname in $(grep '^device.name.*=' anykernel.sh | cut -d= -f2-); do
     for devicename in $device $product $vendordevice $vendorproduct; do
       if [ "$devicename" == "$testname" ]; then
-        ui_print "$testname" " ";
+        ui_print "[√] Your Device $testname Supported." " ";
         match=1;
         break 2;
       fi;
     done;
   done;
   if [ ! "$match" ]; then
-    abort " " "Unsupported device. Aborting...";
+    abort " " "[×] Your Device $testname Unsupported. Aborting...";
   fi;
 }
 int2ver() {
@@ -341,9 +341,9 @@ do_versioncheck() {
     done;
   fi;
   if [ "$supported" ]; then
-    ui_print "$android_ver" " ";
+    ui_print "[√] Current OS Android $android_ver Supported." " ";
   else
-    abort " " "Unsupported Android version. Aborting...";
+    abort " " "[×] Unsupported Android version. Aborting...";
   fi;
 }
 do_levelcheck() {
@@ -544,14 +544,30 @@ if [ -f banner ]; then
   ui_print " " " ";
 fi;
 
-KERNEL_STRING="$(file_getprop anykernel.sh kernel.string)";
-ui_print "$KERNEL_STRING";
+KERNEL_NAME="$(file_getprop anykernel.sh kernel.name)";
+KERNEL_VERSION="$(file_getprop anykernel.sh kernel.version)";
+KERNEL_TOOLCHAIN="$(file_getprop anykernel.sh kernel.toolchain)";
+KERNEL_DEVICE="$(getprop ro.build.product 2>/dev/null)";
+KERNEL_MAINTAINER="$(file_getprop anykernel.sh kernel.maintainer)";
+
 if [ -f version ]; then
   ui_print " ";
   ui_printfile version;
   ui_print " ";
 fi;
-ui_print " " "AnyKernel3 by osm0sis @ xda-developers" " ";
+
+ui_print " ";
+ui_print "════════════════════════════════";
+ui_print "   Miatoll Kernel Installer	  ";
+ui_print "════════════════════════════════";
+ui_print " Name	      : $KERNEL_NAME";
+ui_print " Version    : $KERNEL_VERSION";
+ui_print " Toolchain  : $KERNEL_TOOLCHAIN";
+ui_print " Device     : $KERNEL_DEVICE";
+ui_print " Maintainer : $KERNEL_MAINTAINER";
+ui_print "════════════════════════════════";
+ui_print " ";
+
 grep -oE 'AK_BASE.*' META-INF/com/google/android/updater-script >&2;
 ui_print " ";
 
@@ -562,7 +578,7 @@ do_versioncheck;
 do_levelcheck;
 do_vendorlevelcheck;
 
-ui_print "Installing...";
+ui_print "Installing $KERNEL_NAME To System...";
 ash anykernel.sh;
 if [ $? != 0 ]; then
   abort;
@@ -578,6 +594,6 @@ if [ "$(file_getprop anykernel.sh do.cleanup)" == 1 ]; then
   cleanup;
 fi;
 
-ui_print " " "Done!";
+ui_print " " "Installation Complete.";
 export PATH="$OLD_PATH";
 unset OLD_PATH OUTFD ZIPFILE;

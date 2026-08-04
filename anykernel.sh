@@ -4,17 +4,20 @@
 ### AnyKernel setup
 # global properties
 properties() { '
-kernel.string=Alecto Kernel For Miatoll Devices
+kernel.name=Alecto Kernel
+kernel.version=4.14.357
+kernel.toolchain=Android Clang
+kernel.date=2026-08-03
+kernel.maintainer=@One4Lots
 do.devicecheck=1
 do.modules=0
 do.systemless=1
 do.cleanup=1
 do.cleanuponabort=1
-device.name1=miatoll
-device.name2=curtana
-device.name3=gram
-device.name4=excalibur
-device.name5=joyeuse
+device.name1=curtana
+device.name2=gram
+device.name3=excalibur
+device.name4=joyeuse
 supported.versions=13-17
 '; } # end properties
 
@@ -22,7 +25,7 @@ supported.versions=13-17
 ### AnyKernel install
 # boot shell variables
 BLOCK=/dev/block/bootdevice/by-name/boot;
-IS_SLOT_DEVICE=auto;
+IS_SLOT_DEVICE=0;
 RAMDISK_COMPRESSION=auto;
 PATCH_VBMETA_FLAG=auto;
 NO_BLOCK_DISPLAY=1;
@@ -77,5 +80,5 @@ split_boot;
 flash_boot;
 ## end boot install
 # dtbo install
-flash_dtbo;
+flash_generic dtbo;
 ## end dtbo install
