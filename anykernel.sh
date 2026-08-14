@@ -7,7 +7,6 @@ properties() { '
 kernel.name=Alecto Kernel
 kernel.version=4.14.357
 kernel.toolchain=Android Clang
-kernel.date=2026-08-03
 kernel.maintainer=@One4Lots
 do.devicecheck=1
 do.modules=0
