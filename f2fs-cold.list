@@ -1,0 +1,69 @@
+# Android/F2FS cold data: generally written once, then read repeatedly.
+# One extension per line, no leading dot; comments and blank lines allowed.
+# Keep BOTH lists within 64 total entries and each entry within 7 characters.
+# Use explicit extensions for portability: prefix matching varies by kernel.
+# 52 cold + 8 hot entries leave four slots free for device-specific additions.
+
+# Photos, graphics and modern camera formats
+jpg
+jpeg
+png
+gif
+webp
+heic
+heif
+avif
+dng
+
+# Video and recorded media
+mp4
+mkv
+webm
+3gp
+mov
+avi
+m4v
+ts
+
+# Audio, music and voice recordings
+mp3
+m4a
+aac
+flac
+ogg
+opus
+wav
+amr
+
+# Archives, compressed downloads and filesystem images
+zip
+7z
+rar
+tar
+gz
+xz
+bz2
+lz4
+zst
+img
+iso
+
+# Installed Android packages, code and native libraries
+apk
+apks
+apkm
+xapk
+aab
+dex
+odex
+vdex
+art
+so
+jar
+obb
+
+# Documents and fonts
+pdf
+epub
+ttf
+otf

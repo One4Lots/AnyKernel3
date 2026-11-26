@@ -1,194 +1,246 @@
-----------------------------------------------------------------------------------
-AnyKernel3 - Flashable Zip Template for Kernel Releases with Ramdisk Modifications
-----------------------------------------------------------------------------------
-### by osm0sis @ xda-developers ###
+# AnyKernel3 for miatoll
 
-"AnyKernel is a template for an update.zip that can apply any kernel to any ROM, regardless of ramdisk." - Koush
+A ramdisk-preserving kernel installer for miatoll, built on [AnyKernel3](https://github.com/osm0sis/AnyKernel3) by osm0sis. It provides optional DTBO installation, an Android-oriented F2FS extension policy, and a structured recovery interface using standard OrangeFox/TWRP-style recovery messages.
 
-AnyKernel2 pushed the format further by allowing kernel developers to modify the underlying ramdisk for kernel feature support easily using a number of included command methods along with properties and variables to customize the installation experience to their kernel. AnyKernel3 adds the power of topjohnwu's magiskboot for wider format support by default, and to automatically detect and retain Magisk root by patching the new Image.*-dtb as Magisk would.
+The default target is miatoll's non-slot boot partition. Supporting another device requires reviewing its partition layout, boot image format, and device-tree requirements.
 
-_A script based on Galaxy Nexus (tuna) is included for reference. Everything to edit is self-contained in __anykernel.sh__._
+## Repository layout
 
-## // Properties / Variables ##
-```
-kernel.string=KernelName by YourName @ xda-developers
+| Path | Purpose |
+| --- | --- |
+| `anykernel.sh` | Build properties, target configuration, and installation sequence |
+| `banner` | Opening panel displayed above the aligned release details |
+| `tools/install-ui.sh` | Build information, stage panels, and conditional core-message formatting |
+| `tools/f2fs.sh` | Extension-list validation, comparison, and sysfs updates |
+| `f2fs-cold.list` | Media, archives, packages, code, documents, and fonts |
+| `f2fs-hot.list` | Databases, temporary files, caches, and logs |
+| `tools/ak3-core.sh` | Upstream image preparation, repacking, and flashing helpers |
+| `META-INF/com/google/android/update-binary` | Recovery entry point, shared UI lifecycle, compatibility checks, and environment management |
+| `META-INF/com/google/android/updater-script` | Compatibility stub and upstream version marker |
+| `LICENSE` | Licensing terms for scripts and bundled components |
+
+Module payloads, ramdisk overlays, and patch directories are not used by this configuration. The upstream core may create working directories during installation.
+
+## Configure a release
+
+### Build properties
+
+Edit the `properties()` block in `anykernel.sh`:
+
+```text
+kernel.name=
+kernel.string=
+kernel.version=
+kernel.toolchain=
+kernel.maintainer=
+device.name1=
+device.name2=
+supported.versions=
 do.devicecheck=1
-do.modules=1
-do.systemless=1
+do.modules=0
+do.systemless=0
 do.cleanup=1
-do.cleanuponabort=0
-device.name1=maguro
-device.name2=toro
-device.name3=toroplus
-device.name4=tuna
-supported.versions=6.0 - 7.1.2
-supported.patchlevels=2019-07 -
-supported.vendorpatchlevels=2013-07
+do.cleanuponabort=1
+```
 
-BLOCK=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;
+Metadata and compatibility values are intentionally left for the release maintainer to supply.
+
+| Property | Usage |
+| --- | --- |
+| `kernel.name` | Value of the aligned `Kernel Name` row |
+| `kernel.string` | Build description retained for backend metadata; not repeated in the compact header |
+| `kernel.version` | Kernel release identifier |
+| `kernel.toolchain` | Compiler/toolchain description |
+| `kernel.maintainer` | Maintainer name or contact |
+| `device.nameN` | Accepted device identifiers; add numbered entries as required |
+| `supported.versions` | Supported Android release list or range; blank leaves the version unrestricted |
+| `do.devicecheck` | `1` enables the upstream device compatibility check |
+| `do.modules` / `do.systemless` | Both disabled; no module payload is installed |
+| `do.cleanup` / `do.cleanuponabort` | Remove the installation workspace after completion or abort |
+
+**Device checking is enabled. Installation rejects all devices until a matching `device.nameN` is configured.** The backend checks `ro.product.device`, `ro.build.product`, `ro.product.vendor.device`, and `ro.vendor.product.device`.
+
+For a kernel that supports the entire miatoll family, accepted identifiers may include `curtana`, `gram`, `excalibur`, and `joyeuse`. Add only identifiers supported by the kernel being distributed. Additional entries such as `device.name3` and `device.name4` are supported.
+
+Android versions may be expressed as a list, such as `13, 14, 15`, or a range, such as `13 - 15`. Configure the actual supported releases rather than relying on the examples.
+
+### Boot target
+
+```sh
+BLOCK=boot;
 IS_SLOT_DEVICE=0;
 RAMDISK_COMPRESSION=auto;
 PATCH_VBMETA_FLAG=auto;
+NO_BLOCK_DISPLAY=1;
 ```
 
-__do.devicecheck=1__ specified requires at least device.name1 to be present. This should match ro.product.device, ro.build.product, ro.product.vendor.device or ro.vendor.product.device from the build.prop files for your device. There is support for as many device.name# properties as needed. You may remove any empty ones that aren't being used.
+`BLOCK=boot` selects the boot partition by name. The core resolves the actual device node through standard paths, including `/dev/block/bootdevice/by-name/boot` on miatoll; it is not a relative filename.
 
-__do.modules=1__ will push the .ko contents of the modules directory to the same location relative to root (/) and apply correct permissions. On A/B devices this can only be done to the active slot.
+`IS_SLOT_DEVICE=0` configures a non-slot target. For another device, review slot handling, boot header version, DTB location, AVB requirements, and whether `init_boot`, `vendor_boot`, or other partitions need separate handling. These defaults are not a universal multi-device installer.
 
-__do.systemless=1__ (with __do.modules=1__) will instead push the full contents of the modules directory to create a simple "ak3-helper" Magisk/KernelSU module, allowing developers to effectively replace system files, including .ko files. If the current kernel is changed then the kernel helper module automatically removes itself to prevent conflicts.
+## Kernel and device-tree payloads
 
-__do.cleanup=0__ will keep the zip from removing its working directory in /tmp/anykernel (by default) - this can be useful if trying to debug in adb shell whether the patches worked correctly.
+Place the selected kernel image at the ZIP root using a filename recognized by the core, such as `Image.gz-dtb` or `Image.gz`. Include **one kernel candidate**: the core chooses the first recognized filename, not necessarily the newest file.
 
-__do.cleanuponabort=0__ will keep the zip from removing its working directory in /tmp/anykernel (by default) in case of installation abort.
+### DTBO
 
-__supported.versions=__ will match against ro.build.version.release from the current ROM's build.prop. It can be set to a list or range. As a list of one or more entries, e.g. `7.1.2` or `8.1.0, 9` it will look for exact matches, as a range, e.g. `7.1.2 - 9` it will check to make sure the current version falls within those limits. Whitespace optional, and supplied version values should be in the same number format they are in the build.prop value for that Android version.
+A compatible root-level `dtbo.img` is installed with:
 
-__supported.patchlevels=__ and __supported.vendorpatchlevels=__ will match against ro.build.version.security_patch and ro.vendor.build.security_patch, respectively, from the current system/vendor build.prop. They can be set as a closed or open-ended range of dates in the format YYYY-MM, whitespace optional, e.g. `2019-04 - 2019-06`, `2019-04 -` or `- 2019-06` where the last two examples show setting a minimum or maximum.
-
-`BLOCK=auto` instead of a direct block filepath enables detection of the device boot partition for use with broad, device non-specific zips. Also accepts any partition filename (from by-name), e.g. `boot`, `recovery` or `vendor_boot`.
-
-`IS_SLOT_DEVICE=1` enables detection of the suffix for the active boot partition on slot-based devices and will add this to the end of the supplied `BLOCK=` path. Also accepts `auto` for use with broad, device non-specific zips.
-
-`RAMDISK_COMPRESSION=auto` allows automatically repacking the ramdisk with the format detected during unpack. Changing `auto` to `gz`, `lzo`, `lzma`, `xz`, `bz2`, `lz4`, or `lz4-l` (for lz4 legacy) instead forces the repack as that format, and using `cpio` or `none` will (attempt to) force the repack as uncompressed.
-
-`PATCH_VBMETA_FLAG=auto` allows automatically using the default AVBv2 vbmeta flag on repack, and use the Magisk configuration Canary 23016+. Set to `0` forces keeping whatever is in the original AVBv2 flags, and set to `1` forces patching the flag (only necessary on few devices).
-
-`CUSTOMDD="<arguments>"` may be added to allow specifying additional dd parameters for devices that need to hack their kernel directly into a large partition like mmcblk0, or force use of dd for flashing.
-
-`SLOT_SELECT=active|inactive` may be added to allow specifying the target slot. If omitted the default remains `active`.
-
-`NO_BLOCK_DISPLAY=1` may be added to disable output of the detected final used partition+slot path for zips which choose to include their own custom output instead.
-
-`NO_MAGISK_CHECK=1` may be added to disable detection of Magisk and related kernel/dtb repatching for special zips which don't require that.
-
-`NO_VBMETA_PARTITION_PATCH=1` may be added to skip vbmeta processing using httools, since GKI is bootable with verity/verification ON, as long as AVB is not enforced for boot stage partitions.
-
-## // Command Methods ##
-```
-ui_print "<text>" [...]
-abort ["<text>" [...]]
-contains <string> <substring>
-file_getprop <file> <property>
-
-set_perm <owner> <group> <mode> <file> [<file2> ...]
-set_perm_recursive <owner> <group> <dir_mode> <file_mode> <dir> [<dir2> ...]
-
-dump_boot
-split_boot
-unpack_ramdisk
-unpack_vendorrd <name|path>
-
-backup_file <file>
-restore_file <file>
-replace_string <file> <if search string> <original string> <replacement string> <scope>
-replace_section <file> <begin search string> <end search string> <replacement string>
-remove_section <file> <begin search string> <end search string>
-insert_line <file> <if search string> <before|after> <line match string> <inserted line>
-replace_line <file> <line replace string> <replacement line> <scope>
-remove_line <file> <line match string> <scope>
-prepend_file <file> <if search string> <patch file>
-insert_file <file> <if search string> <before|after> <line match string> <patch file>
-append_file <file> <if search string> <patch file>
-replace_file <file> <permissions> <patch file>
-patch_fstab <fstab file> <mount match name> <fs match type> <block|mount|fstype|options|flags> <original string> <replacement string>
-patch_cmdline <cmdline entry name> <replacement string>
-patch_prop <prop file> <prop name> <new prop value>
-patch_ueventd <ueventd file> <device node> <permissions> <chown> <chgrp>
-
-repack_ramdisk
-flash_boot
-flash_generic <partition name>
-write_boot
-
-reset_ak [keep]
-setup_ak
+```sh
+flash_generic dtbo;
 ```
 
-__"if search string"__ is the string it looks for to decide whether it needs to add the tweak or not, so generally something to indicate the tweak already exists. __"cmdline entry name"__ behaves somewhat like this as a match check for the name of the cmdline entry to be changed/added by the _patch_cmdline_ function, followed by the full entry to replace it. __"prop name"__ also serves as a match check in _patch_prop_ for a property in the given prop file, but is only the prop name as the prop value is specified separately.
+The helper resolves the DTBO partition and checks image size. It also accepts the filename `dtbo`. With neither file present, the installer reports a skip and leaves the partition untouched. Include only one DTBO payload.
 
-Similarly, __"line match string"__ and __"line replace string"__ are the search strings that locate where the modification needs to be made for those commands, __"begin search string"__ and __"end search string"__ are both required to select the first and last lines of the script block to be replaced for _replace_section_, and __"mount match name"__ and __"fs match type"__ are both required to narrow the _patch_fstab_ command down to the correct entry.
+Partition discovery and size checks do not establish that an overlay matches the hardware or kernel. Package only a DTBO image validated for the intended devices.
 
-__"scope"__ may be specified as __"global"__ to force all instances of the string/line targeted by _replace_string_, _replace_line_ or _remove_line_ to be replaced/removed accordingly. Omitted or set to anything else and it will perform the default first-match action.
+### DTB
 
-__"before|after"__ requires you simply specify __"before"__ or __"after"__ for the placement of the inserted line, in relation to __"line match string"__.
+A Device Tree Blob describes hardware to the kernel. DTBO images contain overlays for a device tree; the two are not interchangeable.
 
-__"block|mount|fstype|options|flags"__ requires you specify which part (listed in order) of the fstab entry you want to check and alter.
+A generated `dtb.img` may contain a raw DTB, concatenated DTBs, or a platform-specific container. Choose its packaging from the kernel build recipe and the device's boot image layout:
 
-_dump_boot_ and _write_boot_ are the default method of unpacking/repacking, but for more granular control, or omitting ramdisk changes entirely ("OG AK" mode), these can be separated into _split_boot; unpack_ramdisk_ and _repack_ramdisk; flash_boot_ respectively. _unpack_ramdisk_ unpacks all vendor_boot v4 format sub-ramdisks where _unpack_vendorrd \<name|path\>_ can be used instead to only unpack a specific sub-ramdisk while leaving the others untouched and __"name"__ is the v4 sub-ramdisk name (e.g. platform or ramdisk, dlkm, recovery); _repack_ramdisk_ will repack any unpacked sub-ramdisks so is used in both cases. _flash_generic_ can be used to flash an image to the corresponding partition. It is automatically included for dtbo, system_dlkm and vendor_dlkm in _write_boot_ but can be called separately if using "OG AK" mode or creating a simple partition flashing only zip.
+- **Appended DTB:** If the build produces an `Image.gz-dtb` containing the required DTBs, use that kernel payload. A separate DTB replacement is generally unnecessary for this layout.
+- **Separate boot-image component:** The core recognizes root-level `dtb` and `dtb.img`. In the bundled magiskboot repack path, the replacement is copied into the separate `dtb` component only when that component was extracted from the existing image.
+- **Separate build outputs:** An `Image.gz` plus `dtb.img` requires checking the packaging recipe. Concatenation is suitable only when the device expects an appended DTB and the output format supports it.
 
-Multi-partition zips can be created by removing the ramdisk and patch folders from the zip and including instead "-files" folders named for the partition (without slot suffix), e.g. boot-files + recovery-files, or kernel-files + ramdisk-files (on some Treble devices). These then contain Image.gz, and ramdisk (or vendor_ramdisk/\<name\> for vendor_boot v4 format), patch, etc. subfolders for each partition. To setup for the next partition, simply set `BLOCK=` (without slot suffix) and `RAMDISK_COMPRESSION=` for the new target partition and use the _reset_ak_ command.
+Do not flash DTB bytes directly to `boot`, place `dtb.img` on the DTBO partition, or add a standalone DTB-partition write without verified device requirements. Devices storing DTBs in another boot-related image need an appropriate partition workflow.
 
-Similarly, multi-slot zips can be created with the normal zip layout for the active (current) slot, then resetting for the inactive slot by setting `BLOCK=` (without slot suffix) again, `SLOT_SELECT=inactive` and `RAMDISK_COMPRESSION=` for the target slot and using the _reset_ak keep_ command, which will retain the patch and any added ramdisk files for the next slot.
+## Installation sequence
 
-_backup_file_ may be used for testing to ensure ramdisk changes are made correctly, transparency for the end-user, or in a ramdisk-only "mod" zip. In the latter case _restore_file_ could also be used to create a "restore" zip to undo the changes, but should be used with caution since the underlying patched files could be changed with ROM/kernel updates.
+The backend extracts the ZIP, prepares its tools and environment, displays the banner and release details, and silently runs compatibility checks before starting `anykernel.sh`. A failed check remains a visible, fatal error; routine successful-check messages are not printed.
 
-You may also use _ui_print "\<text\>"_ to write messages back to the recovery during the modification process, _abort "\<text>"_ to abort with optional message, and _file_getprop "\<file\>" "\<property\>"_ and _contains "\<string\>" "\<substring\>"_ to simplify string testing logic you might want in your script.
+1. **Boot image** — `split_boot` reads and splits the existing boot image; `flash_boot` rebuilds it with the selected kernel and writes the result. The existing ramdisk is retained without unpacking/repacking or custom ramdisk patches.
+2. **Device-tree overlays** — a packaged DTBO payload is passed to `flash_generic dtbo`; absent payloads are skipped.
+3. **F2FS extension policy** — mounted filesystems exposing a supported `extension_list` node are checked and updated as needed.
 
-## // Binary Inclusion ##
+After the payload steps, the backend restores the environment, performs cleanup, and displays one completion panel. Failed payloads take the abort path and never display that panel. Wait for the recovery's final installation result before rebooting. Back up the original boot image and any partition being replaced before testing a release.
 
-The AK3 repo includes current ARM builds of `magiskboot`, `magiskpolicy`, `lptools_static`, `httools_static`, `fec`, `snapshotupdater_static` and `busybox` by default to keep the basic package small. Builds for other architectures and optional binaries (see below) are available from the latest Magisk zip, or my latest AIK-mobile and FlashIt packages, respectively, here:
+## Recovery interface
 
-https://forum.xda-developers.com/t/tool-android-image-kitchen-unpack-repack-kernel-ramdisk-win-android-linux-mac.2073775/ (Android Image Kitchen thread)  
-https://forum.xda-developers.com/t/tools-zips-scripts-osm0sis-odds-and-ends-multiple-devices-platforms.2239421/ (Odds and Ends thread)
+The backend and kernel payload share `tools/install-ui.sh`. A boxed ASCII banner is followed immediately by six aligned rows, with no separate information heading:
 
-Optional supported binaries which may be placed in /tools to enable built-in expanded functionality are as follows:
-* `mkbootfs` - for broken recoveries, or, booted flash support for a script/app via bind mount to /tmp (deprecated/use with caution)
-* `flash_erase`, `nanddump`, `nandwrite` - MTD block device support for devices where the `dd` command is not sufficient
-* `dumpimage`, `mkimage` - DENX U-Boot uImage format support
-* `mboot` - Intel OSIP Android image format support
-* `unpackelf`, `mkbootimg` - Sony ELF kernel.elf format support, repacking as AOSP standard boot.img for unlocked bootloaders
-* `elftool` (with `unpackelf`) - Sony ELF kernel.elf format support, repacking as ELF for older Sony devices
-* `mkmtkhdr` (with `unpackelf`) - MTK device boot image section headers support for Sony devices
-* `futility` + `chromeos` test keys directory - Google ChromeOS signature support (deprecated)
-* `boot_signer-dexed.jar` (deprecated) + `avb` keys directory - Google Android Verified Boot 1.0 (AVBv1) custom signature support
-* `rkcrc` - Rockchip KRNL ramdisk image support
+```text
+  Kernel Name     : Alecto Kernel
+  Kernel Version  : 4.14.357
+  Device Name     : curtana
+  Toolchain       : Android Clang
+  Android Version : 16
+  Maintainer      : One4Lots
+```
 
-Optionally moving ARM builds to tools/arm and putting x86 builds in tools/x86 will enable architecture detection for use with broad, device non-specific zips.
+These values illustrate the layout; release properties in the repository remain blank. Labels use a fixed-width column, and long values continue under the value column without truncation. Missing metadata displays as `Not specified`.
 
-## // Instructions ##
+The device identifier is read from `getprop`. Android version prefers the mounted system's `build.prop`, falling back to `getprop`; the available values depend on the recovery environment. Partition paths, slot details, the running recovery kernel, and duplicate build descriptions are not printed in the header.
 
-1. Place final kernel build product, e.g. Image.gz-dtb or zImage to name a couple, in the zip root (any separate dt, dtb or recovery_dtbo, dtbo, system_dlkm and/or vendor_dlkm should also go here for devices that require custom ones, each will fallback to the original if not included)
+### Lifecycle and status messages
 
-2. Place any required ramdisk files in /ramdisk (/vendor_ramdisk for simple multi-partition vendor_boot v3 support, or /vendor_ramdisk/\<name\> for simple multi-partition vendor_kernel_boot v4 support) and module files in /modules (with the full path like /modules/system/lib/modules)
+The display follows one sequence: **banner → release details → installation stages → final completion**. Compatibility checks execute without success chatter. `NO_BLOCK_DISPLAY=1` prevents the core from printing partition paths during setup and generic flashing. ZIP extraction is quiet, with extraction errors still reported.
 
-3. Place any required patch files (generally partial files which go with AK3 file editing commands) in /patch (/vendor_patch for simple multi-partition vendor_boot v3 or vendor_kernel_boot v4 support)
+The three numbered stages distinguish boot image installation, optional DTBO installation, and F2FS policy updates. Status tags identify information, completed steps, skips, warnings, root-handling events, AVB handling, and errors. Backend messages are dispatched through `ak_ui_backend_event`; their wording and layout live in the shared UI, including compatibility failures, optional module notices, and diagnostic-archive output. There are no direct backend `ui_print` calls or a separate legacy message style.
 
-4. Modify the anykernel.sh to add your kernel's name, boot partition location, permissions for any added ramdisk files, and use methods for any required ramdisk modifications (optionally, also place banner and/or version files in the root to have these displayed during flash)
+A failed device, Android-version, or security-patch check remains fatal. Android-version and patch-level failures display aligned detected/supported values. The abort path still collects requested diagnostics, restores the environment, and applies the configured cleanup policy; it never prints the success panel.
 
-5. `zip -r9 UPDATE-AnyKernel3.zip * -x .git README.md *placeholder`
+Extraction, tool initialization, and a missing UI helper can fail before the shared UI is available. A minimal shell-builtin fallback emits the same tagged, 42-column recovery format for these early failures. It requires neither bundled tools nor a successfully extracted package.
 
-_The LICENSE file must remain in the final zip to comply with licenses for binary redistribution and the license of the AK3 scripts._
+No ANSI effects, animations, artificial delays, or simulated verification results are used. Custom output is limited to 42 columns for OrangeFox/TWRP-style consoles; final appearance depends on the recovery font and theme.
 
-If supporting a recovery that forces zip signature verification (like Cyanogen Recovery) then you will need to also sign your zip using the method I describe here:
+`AK_UI_METADATA_SHOWN` prevents the payload process from repeating the header. Running the payload independently retains a header fallback. The backend displays completion only after payload execution, environment restoration, and configured cleanup. Final rendering uses shell builtins so it does not depend on tools removed during cleanup.
 
-https://forum.xda-developers.com/t/dev-template-complete-shell-script-flashable-zip-replacement-signing-script.2934449/
+### Conditional core messages
 
-Not required, but any tweaks you can't hardcode into the source (best practice) should be added with an additional init.tweaks.rc or bootscript.sh to minimize the necessary ramdisk changes. On newer devices Magisk allows these within /overlay.d - see examples.
+The shared `ui_print` hook formats recognized Magisk, KernelSU helper-module, AVB, warning, and abort events. For example, the core's Magisk compatibility branch produces:
 
-It is also extremely important to note that for the broadest AK3 compatibility it is always better to modify a ramdisk file rather than replace it.
+```text
+  [ROOT] Magisk-patched boot detected
+  [INFO] Applying Magisk compatibility
+  handling
+```
 
-___If running into trouble when flashing an AK3 zip, the suffix -debugging may be added to the zip's filename to enable creation of a debug .tgz of /tmp for later examination while booted or on desktop.___
+These report actual core branches, not independent root detection or guarantees of root preservation. KernelSU helper-module events also depend on upstream module settings, which are disabled in this configuration. AVB messages describe the core's handling, not independent cryptographic validation.
 
-## // Staying Up-To-Date ##
+Unknown messages pass through, warnings and abort messages retain their original text, and stderr/debug diagnostics remain available. Standalone partition-path notifications are diagnostic-only; messages explaining a path-related error are not suppressed. The hook never runs flashing helpers in output-filtering pipelines or subshells.
 
-Now that you've got a ready zip for your device, you might be wondering how to keep it up-to-date with the latest AnyKernel commits. AnyKernel2 and AnyKernel3 have been painstakingly developed to allow you to just drop in the latest update-binary and tools directory and have everything "just work" for beginners not overly git or script savvy, but the best practice way is as follows:
+### Customization and entry points
 
-1. Fork my AnyKernel3 repo on GitHub
+- Edit `banner` for the opening artwork; keep every line within 42 columns.
+- Edit `tools/install-ui.sh` for metadata rows, stage labels, and conditional message mappings.
+- Keep `update-binary`: it is required to extract the package, prepare tools, validate compatibility, execute the payload, and restore the environment. Its presentation calls are integrated with the shared UI.
+- Keep `updater-script` as the compatibility stub and upstream version marker. It is not an Edify installation script in this package.
+- Keep `tools/ak3-core.sh` unchanged unless a separately reviewed flashing change is required.
 
-2. `git clone https://github.com/<yourname>/AnyKernel3`
+## F2FS extension policy
 
-3. `git remote add upstream https://github.com/osm0sis/AnyKernel3`
+The policy contains **52 cold** and **8 hot** extensions, leaving four slots available within the common F2FS limit of 64 total entries. Cold entries cover mostly read-oriented assets; hot entries cover frequently rewritten state. These are workload-dependent allocation hints, not guaranteed performance improvements.
 
-4. `git checkout -b <devicename>`
+### List format
 
-5. Set it up like your <devicename> zip (i.e. remove any folders you don't use like ramdisk or patch, delete README.md, and add your anykernel.sh and optionally your Image.*-dtb if you want it up there) then commit all those changes
+- Use one extension per line without a leading dot.
+- Keep entries within 1–7 ASCII characters using letters, digits, `_`, or `-`.
+- Keep extensions unique across both lists, including case-insensitive duplicates.
+- Keep the combined count at or below 64.
+- Blank lines, full-line `#` comments, inline comments, and CRLF line endings are supported.
 
-6. `git push --set-upstream origin <devicename>`
+Comments and whitespace are removed before validation and are never submitted as extension entries. Extension-prefix and compound-suffix matching vary between kernel versions; explicit extensions are used for portability.
 
-7. `git checkout master` then repeat steps 4-6 for any other devices you support
+### Update behavior
 
-Then you should be able to `git pull upstream master` from your master branch and either merge or cherry-pick the new AK3 commits into your device branches as needed.
+The installer compares sorted class/extension records from both lists with live sysfs contents. Matching contents skip all writes, regardless of ordering. There is no hardcoded MD5/SHA value to regenerate when the policy changes.
 
-___For further support and usage examples please see the AnyKernel3 XDA thread:___ _https://forum.xda-developers.com/t/dev-template-anykernel3-easily-mod-rom-ramdisk-pack-image-gz-flashable-zip.2670512/_
+Recovery status lines remain compact: `[SKIP] F2FS extensions already updated`, `[INFO] Updating F2FS extension list`, and `[OK] F2FS extension list updated`. Filesystem paths and the checked-filesystem/warning counts are written to stderr for recovery diagnostics rather than printed in the console. A checked filesystem is one mounted F2FS instance exposing an `extension_list` node, not an individual extension.
 
-__Have fun!__
+Updates remove obsolete records before adding new ones, preserving matching entries and freeing capacity first. Each operation uses a separate sysfs write (`[c]ext`, `[h]ext`, `[c]!ext`, or `[h]!ext`), followed by a read-back comparison. Standard headers and the historical `extenstion` spelling are recognized.
+
+F2FS tuning is best-effort:
+
+- Only mounted filesystems exposing supported nodes are eligible. The installer does not mount or decrypt `/data`.
+- Missing nodes produce a skip; invalid policy data produces a warning without applying the policy.
+- Unrecognized or unwritable nodes are left unchanged; failed writes or read-back mismatches produce warnings.
+- A write failure stops updates to that filesystem and may leave partial state. There is no transactional rollback. A later invocation re-reads actual state and can complete the update.
+- Other filesystems continue to be checked after a node fails. F2FS warnings do not convert a successful kernel flash into a fatal installation failure.
+
+The running recovery kernel controls sysfs support. Unmounted filesystems are not changed, and these hints primarily affect subsequent file allocation rather than relocating existing data.
+
+## Package a release
+
+1. Fill in release metadata, supported devices, and Android compatibility.
+2. Confirm the boot/DTB layout and place one kernel payload at the repository root.
+3. Add a validated `dtbo.img` or separate DTB component only when required.
+4. Run the checks below and test the release on the intended device/recovery combination.
+5. Create a new ZIP containing the required paths and selected payloads.
+
+For an `Image.gz-dtb` release without optional device-tree payloads, run from the repository root:
+
+```sh
+zip -r9 ../kernel-miatoll.zip \
+  META-INF tools anykernel.sh banner \
+  f2fs-cold.list f2fs-hot.list LICENSE Image.gz-dtb
+```
+
+Use a fresh output filename or remove the previous archive first: updating an existing ZIP can retain obsolete payload entries. Replace `Image.gz-dtb` with the chosen kernel filename, and append `dtbo.img` or a required separate DTB component to the input list when applicable. Do not include multiple kernel candidates or unrelated build artifacts. The `LICENSE` file must remain in distributed ZIPs.
+
+Backups and hardware validation are required before public distribution. A successful host-side check cannot establish bootability, device-tree compatibility, or root preservation.
+
+## Validation and maintenance
+
+Run shell syntax and whitespace checks from the repository root:
+
+```sh
+sh -n anykernel.sh
+sh -n tools/install-ui.sh
+sh -n tools/f2fs.sh
+sh -n META-INF/com/google/android/update-binary
+git diff --check
+```
+
+Review the packaged file list, enabled device check, supported identifiers, image selection, and optional DTBO behavior. On-device validation should cover the intended recovery, boot behavior, conditional root handling, and F2FS availability. Development-only test files are not required in release ZIPs.
+
+Review upstream core/backend changes together with bundled binary updates. Preserve the backend UI integration, quiet compatibility-check presentation, custom UI helper, and F2FS helper when rebasing. Recheck exact message mappings when upstream wording changes, and review all device-specific settings before adapting the installer to another target.
+
+## Credits and license
+
+- **osm0sis and AnyKernel contributors:** installer framework and recovery integration.
+- **topjohnwu and Magisk contributors:** magiskboot and related tooling.
+- **Bundled component authors:** see `LICENSE` for licensing details.
+
+Upstream documentation and support: [AnyKernel3](https://github.com/osm0sis/AnyKernel3).

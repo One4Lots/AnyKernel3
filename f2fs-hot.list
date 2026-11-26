@@ -1,0 +1,19 @@
+# Android/F2FS hot data: small, frequently rewritten state.
+# Shared 64-entry budget with f2fs-cold.list; extensions are 1-7 characters.
+# Hot/cold are allocation hints, not guarantees about every app's workload.
+
+# SQLite databases and their journal / write-ahead-log sidecars
+# Explicit compound suffixes also work on kernels with exact matching.
+db
+sqlite
+db-wal
+db-shm
+# Seven-byte limit prevents listing sqlite-wal and sqlite-journal.
+# db-journal is also too long; db covers it only on prefix-matching kernels.
+
+# Frequently rewritten caches, temporary files and diagnostic output
+cache
+tmp
+temp
+log
+# Large streaming caches (e.g. exo) are intentionally not forced hot.

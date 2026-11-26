@@ -1,121 +1,70 @@
-### AnyKernel3 Ramdisk Mod Script
+### AnyKernel3 Kernel Install Script
 ## osm0sis @ xda-developers
 
 ### AnyKernel setup
-# global properties
+# Fill in metadata and compatibility properties before distributing a build.
+# Device checking is enabled: fill device.name* or installation will abort.
 properties() { '
-kernel.string=ExampleKernel by osm0sis @ xda-developers
+kernel.name=
+kernel.string=
+kernel.version=
+kernel.toolchain=
+kernel.maintainer=
+device.name1=
+device.name2=
+supported.versions=
 do.devicecheck=1
 do.modules=0
-do.systemless=1
+do.systemless=0
 do.cleanup=1
-do.cleanuponabort=0
-device.name1=maguro
-device.name2=toro
-device.name3=toroplus
-device.name4=tuna
-device.name5=
-supported.versions=
-supported.patchlevels=
-supported.vendorpatchlevels=
+do.cleanuponabort=1
 '; } # end properties
 
-
-### AnyKernel install
-## boot files attributes
-boot_attributes() {
-set_perm_recursive 0 0 755 644 $RAMDISK/*;
-set_perm_recursive 0 0 750 750 $RAMDISK/init* $RAMDISK/sbin;
-} # end attributes
-
-# boot shell variables
-BLOCK=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;
+# miatoll uses non-slot boot; review these settings for future devices.
+# Resolve the actual boot block through standard by-name paths.
+BLOCK=boot;
 IS_SLOT_DEVICE=0;
 RAMDISK_COMPRESSION=auto;
 PATCH_VBMETA_FLAG=auto;
+NO_BLOCK_DISPLAY=1;
 
-# import functions/variables and setup patching - see for reference (DO NOT REMOVE)
+# Import core helpers and initialize the installer (DO NOT REMOVE).
 . tools/ak3-core.sh;
 
-# boot install
-dump_boot; # use split_boot to skip ramdisk unpack, e.g. for devices with init_boot ramdisk
+# Recovery presentation uses standard ui_print, not terminal escape codes.
+. "$AKHOME/tools/install-ui.sh";
+ak_ui_enable_core_messages;
+# The backend owns the header; retain a standalone-script fallback.
+if [ "$AK_UI_METADATA_SHOWN" != 1 ]; then
+  ak_ui_banner;
+  ak_ui_start;
+fi;
 
-# init.rc
-backup_file init.rc;
-replace_string init.rc "cpuctl cpu,timer_slack" "mount cgroup none /dev/cpuctl cpu" "mount cgroup none /dev/cpuctl cpu,timer_slack";
+# Preserve the existing ramdisk; no ramdisk unpack/repack or patches needed.
+ak_ui_stage 1 "BOOT IMAGE";
+ak_ui_text "[INFO] Reading and splitting boot image";
+split_boot || abort "[ERROR] Boot image preparation failed.";
+ak_ui_text "[INFO] Rebuilding and writing boot image";
+flash_boot || abort "[ERROR] Boot image installation failed.";
+ak_ui_text "[OK] Boot image step completed";
 
-# init.tuna.rc
-backup_file init.tuna.rc;
-insert_line init.tuna.rc "nodiratime barrier=0" after "mount_all /fstab.tuna" "\tmount ext4 /dev/block/platform/omap/omap_hsmmc.0/by-name/userdata /data remount nosuid nodev noatime nodiratime barrier=0";
-append_file init.tuna.rc "bootscript" init.tuna;
+# Optional dtbo/dtbo.img: core handles partition discovery and size checks.
+# flash_boot does not flash DTBO itself (write_boot would).
+ak_ui_stage 2 "DEVICE TREE OVERLAYS";
+if [ -f "$AKHOME/dtbo" ] || [ -f "$AKHOME/dtbo.img" ]; then
+  ak_ui_text "[INFO] Installing packaged DTBO image";
+  flash_generic dtbo || abort "[ERROR] DTBO installation failed.";
+  dtbo_result="[OK] DTBO image step completed";
+else
+  dtbo_result="[SKIP] No DTBO image packaged";
+fi;
+ak_ui_text "$dtbo_result";
 
-# fstab.tuna
-backup_file fstab.tuna;
-patch_fstab fstab.tuna /system ext4 options "noatime,barrier=1" "noatime,nodiratime,barrier=0";
-patch_fstab fstab.tuna /cache ext4 options "barrier=1" "barrier=0,nomblk_io_submit";
-patch_fstab fstab.tuna /data ext4 options "data=ordered" "nomblk_io_submit,data=writeback";
-append_file fstab.tuna "usbdisk" fstab;
+# Best-effort tuning of mounted F2FS filesystems, independent of /data access.
+ak_ui_stage 3 "F2FS EXTENSION POLICY";
+ak_ui_text "[INFO] Checking mounted F2FS filesystems";
+. "$AKHOME/tools/f2fs.sh";
+f2fs_update_extensions;
 
-write_boot; # use flash_boot to skip ramdisk repack, e.g. for devices with init_boot ramdisk
-## end boot install
-
-
-## init_boot files attributes
-#init_boot_attributes() {
-#set_perm_recursive 0 0 755 644 $RAMDISK/*;
-#set_perm_recursive 0 0 750 750 $RAMDISK/init* $RAMDISK/sbin;
-#} # end attributes
-
-# init_boot shell variables
-#BLOCK=init_boot;
-#IS_SLOT_DEVICE=1;
-#RAMDISK_COMPRESSION=auto;
-#PATCH_VBMETA_FLAG=auto;
-
-# reset for init_boot patching
-#reset_ak;
-
-# init_boot install
-#dump_boot; # unpack ramdisk since it is the new first stage init ramdisk where overlay.d must go
-
-#write_boot;
-## end init_boot install
-
-
-## vendor_kernel_boot shell variables
-#BLOCK=vendor_kernel_boot;
-#IS_SLOT_DEVICE=1;
-#RAMDISK_COMPRESSION=auto;
-#PATCH_VBMETA_FLAG=auto;
-
-# reset for vendor_kernel_boot patching
-#reset_ak;
-
-# vendor_kernel_boot install
-#split_boot; # skip unpack/repack ramdisk, e.g. for dtb on devices with hdr v4 and vendor_kernel_boot
-
-#flash_boot;
-## end vendor_kernel_boot install
-
-
-## vendor_boot files attributes
-#vendor_boot_attributes() {
-#set_perm_recursive 0 0 755 644 $RAMDISK/*;
-#set_perm_recursive 0 0 750 750 $RAMDISK/init* $RAMDISK/sbin;
-#} # end attributes
-
-# vendor_boot shell variables
-#BLOCK=vendor_boot;
-#IS_SLOT_DEVICE=1;
-#RAMDISK_COMPRESSION=auto;
-#PATCH_VBMETA_FLAG=auto;
-
-# reset for vendor_boot patching
-#reset_ak;
-
-# vendor_boot install
-#dump_boot; # use split_boot to skip ramdisk unpack, e.g. for dtb on devices with hdr v4 but no vendor_kernel_boot
-
-#write_boot; # use flash_boot to skip ramdisk repack, e.g. for dtb on devices with hdr v4 but no vendor_kernel_boot
-## end vendor_boot install
-
+# The backend reports completion after environment restoration and cleanup.
+ak_ui_payload_done;
