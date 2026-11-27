@@ -5,14 +5,14 @@
 # Fill in metadata and compatibility properties before distributing a build.
 # Device checking is enabled: fill device.name* or installation will abort.
 properties() { '
-kernel.name=
+kernel.name=Upstream Kernel
 kernel.string=
-kernel.version=
-kernel.toolchain=
-kernel.maintainer=
-device.name1=
+kernel.version=6.14.7
+kernel.toolchain=Android clang
+kernel.maintainer=One4Lots@GithHub
+device.name1=curtana
 device.name2=
-supported.versions=
+supported.versions=16-17
 do.devicecheck=1
 do.modules=0
 do.systemless=0
